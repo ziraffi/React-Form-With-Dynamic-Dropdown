@@ -1,6 +1,5 @@
 <?php
 namespace CustomWidget\ElementorWidgets\Widgets;
-
 use Elementor\Widget_Base;
 use Elementor\Controls_Manager;
 
@@ -649,11 +648,10 @@ class Multi_Grid extends \Elementor\Widget_Base {
             return isset($this->category_id) ? $this->category_id : null;
         }
     
-        public function render() {
+        public function render($query = null) {
             // Ensure you have a unique identifier for the wrapper
             $widget_id = 'digital-product-grid-' . $this->get_id();            
             $settings = $this->get_settings_for_display();
-            $selected_category = $this->get_category_id();
         
             // Default settings
             $show_price = isset($settings['show_price']) && $settings['show_price'] === 'yes';
@@ -666,27 +664,53 @@ class Multi_Grid extends \Elementor\Widget_Base {
             // Button styles
             $button_styles = $this->get_button_styles($settings);
         
-            // Prepare query
-            $args = [
-                'post_type' => 'download',
-                'posts_per_page' => $number_of_products,
-            ];
-            // Apply category filter only if category is selected and not 0
-            if (!empty($selected_category) && $selected_category > 0)  {
-                $args['tax_query'] = [
-                    [
+            // Prepare the query if not provided
+            if ($query === null) {
+                $args = [
+                    'post_type' => 'download',
+                    'posts_per_page' => $number_of_products,
+                    'tax_query' => [
+                        'relation' => 'AND',
+                    ],
+                ];
+        
+                // Get selected categories and tags from settings
+                $selected_categories = isset($settings['selected_categories']) ? array_map('intval', $settings['selected_categories']) : [];
+                $selected_tags = isset($settings['selected_tags']) ? array_map('sanitize_text_field', $settings['selected_tags']) : [];
+        
+                // Apply category filters
+                if (!empty($selected_categories)) {
+                    $args['tax_query'][] = [
                         'taxonomy' => 'download_category',
                         'field' => 'term_id',
-                        'terms' => $selected_category,
-                    ]
-                ];
-            }
-            
+                        'terms' => $selected_categories,
+                    ];
+                }
         
-            $query = new \WP_Query($args);
-
+                // Apply tag filters
+                if (!empty($selected_tags)) {
+                    $tag_ids = [];
+                    foreach ($selected_tags as $tag_name) {
+                        $tag = get_term_by('name', trim($tag_name), 'download_tag');
+                        if ($tag) {
+                            $tag_ids[] = $tag->term_id;
+                        }
+                    }
+        
+                    if (!empty($tag_ids)) {
+                        $args['tax_query'][] = [
+                            'taxonomy' => 'download_tag',
+                            'field' => 'term_id',
+                            'terms' => $tag_ids,
+                        ];
+                    }
+                }
+        
+                $query = new \WP_Query($args);
+            }
+        
             // Log the actual number of downloads returned
-            error_log('No of Downloads in this Category: ' . $query->found_posts);
+            error_log('Number of Downloads Found: ' . $query->found_posts);
         
             ob_start();
             ?>
@@ -712,7 +736,7 @@ class Multi_Grid extends \Elementor\Widget_Base {
                     text-align: <?php echo esc_attr($button_alignment); ?>;
                 }
             </style>
-            <div  id="<?php echo esc_attr($widget_id); ?>"  class="digital-product-grid-wrapper" style="display: grid; grid-template-columns: repeat(<?php echo esc_attr($cards_per_row); ?>, 1fr); gap: <?php echo esc_attr($row_gap); ?>px; grid-auto-flow: <?php echo esc_attr($auto_flow); ?>;">
+            <div id="<?php echo esc_attr($widget_id); ?>" class="digital-product-grid-wrapper" style="display: grid; grid-template-columns: repeat(<?php echo esc_attr($cards_per_row); ?>, 1fr); gap: <?php echo esc_attr($row_gap); ?>px; grid-auto-flow: <?php echo esc_attr($auto_flow); ?>;">
                 <?php
                 if ($query->have_posts()) {
                     while ($query->have_posts()) {
@@ -783,7 +807,6 @@ class Multi_Grid extends \Elementor\Widget_Base {
                                 </div>
                             </div>
                         </div>
-                                        
                         <?php
                     }
                     wp_reset_postdata();
@@ -793,9 +816,9 @@ class Multi_Grid extends \Elementor\Widget_Base {
                 ?>
             </div>
             <?php
-            $output = ob_get_clean();
-            echo $output;
+            echo ob_get_clean();
         }
+        
         
 // Utility function to get button styles
 private function get_button_styles($settings) {
