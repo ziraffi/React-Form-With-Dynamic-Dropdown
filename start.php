@@ -102,7 +102,7 @@ final class CustomWidgetPlugin
 
     function filter_category_shortcode() {
         $terms = get_terms([
-            'taxonomy' => 'download_category', // Assuming 'download_category' is your taxonomy for EDD
+            'taxonomy' => 'download_category',
             'hide_empty' => true,
         ]);
     
