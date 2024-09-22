@@ -10,7 +10,10 @@ jQuery(document).ready(function ($) {
             return $(this).val();
         }).get();
 
-        var widgetWrapper = $('.digital-product-grid-wrapper');
+        var widgetWrapper = $('.elementor-widget-digital-product-grid>.elementor-widget-container');
+
+        // Optionally, you can also reset the layout styles here if needed
+        // widgetWrapper.attr('style', '');
 
         $.ajax({
             url: ajax_object.ajax_url,
@@ -20,8 +23,23 @@ jQuery(document).ready(function ($) {
                 category: categories,
                 tags: selectedTags
             },
+            beforeSend: function() {
+            // Create the spinner element
+            var spinner = $('<div class="loading-spinner"></div>');
+            widgetWrapper.empty().append(spinner); // Clear previous content and add spinner
+            },
             success: function (response) {
                 widgetWrapper.html(response.data);
+                
+                // Reinitialize Elementor styles and controls
+                elementorFrontend.elementsHandler.runReadyTrigger(widgetWrapper);
+
+                // Reset the form after successful filtering
+                resetFilterForm();
+            },
+            complete: function() {
+            // Remove the spinner after the request is complete
+            widgetWrapper.find('.loading-spinner').remove();
             }
         });
     });
@@ -74,4 +92,18 @@ jQuery(document).ready(function ($) {
         });
         $(this).parent().remove();
     });
+
+    // Function to reset the filter form
+    function resetFilterForm() {
+        // Uncheck all category checkboxes
+        $('input[name="category[]"]').prop('checked', false);
+
+        // Clear selected tags
+        selectedTags = [];
+        $('#selected-tags').empty();
+        
+        // Clear tag input field
+        $('#filter-tags').val('');
+        $('#tags-suggestions').empty();
+    }
 });
