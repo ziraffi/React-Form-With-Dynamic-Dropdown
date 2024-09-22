@@ -10,9 +10,11 @@
  */
 
 namespace CustomWidget\ElementorWidgets;
-use CustomWidget\ElementorWidgets\Widgets\Multi_Grid; // Correct namespace import
+use CustomWidget\ElementorWidgets\Widgets\Multi_Grid; 
 use Elementor\Plugin as ElementorPlugin;
 use Elementor\Widgets_Manager as ElementorWidgetsManager;
+use WP_Query;
+
 
 if (!defined('ABSPATH')) {
     exit;
@@ -36,10 +38,18 @@ final class CustomWidgetPlugin
         add_action('wp_enqueue_scripts', [$this, 'register_widget_styles']); 
         add_action('elementor/elements/categories_registered', [$this, 'create_new_category'], 5,1);
         add_action('elementor/widgets/widgets_registered', [$this, 'init_widgets']);
-        add_shortcode('filter_category', [$this, 'filter_category_shortcode']);
+        add_shortcode('download_filter_form', [$this, 'filter_form_shortcode']);
         add_action('wp_enqueue_scripts', [$this, 'enqueue_ajax_filter_script']);
-        add_action('wp_ajax_filter_products', [$this, 'filter_products_callback']);
-        add_action('wp_ajax_nopriv_filter_products', [$this, 'filter_products_callback']);
+
+        // add_action('wp_ajax_filter_products', [$this, 'filter_products_callback']);
+        // add_action('wp_ajax_nopriv_filter_products', [$this, 'filter_products_callback']);
+
+
+        add_action('wp_ajax_filter_downloads', [$this, 'filter_downloads']);
+        add_action('wp_ajax_nopriv_filter_downloads', [$this, 'filter_downloads']);
+
+        add_action('wp_ajax_fetch_tag_suggestions', [$this, 'fetch_tag_suggestions']);
+        add_action('wp_ajax_nopriv_fetch_tag_suggestions', [$this, 'fetch_tag_suggestions']);
     }
 
     public function enqueue_ajax_filter_script() {
@@ -54,7 +64,151 @@ final class CustomWidgetPlugin
         wp_localize_script('ajax-filter', 'ajax_object', array(
             'ajax_url' => admin_url('admin-ajax.php')
         ));
+        
     }
+
+
+    function filter_form_shortcode() {
+        $categories = get_terms([
+            'taxonomy' => 'download_category', 
+            'hide_empty' => true,
+        ]);
+    
+        ob_start();
+        ?>
+        <form id="download-filter-form">
+            <fieldset>
+                <legend>Filter by Category</legend>
+                <div>
+                    <?php foreach ($categories as $category) : ?>
+                        <label>
+                            <input type="checkbox" name="category[]" value="<?php echo esc_attr($category->term_id); ?>">
+                            <?php echo esc_html($category->name); ?>
+                        </label>
+                    <?php endforeach; ?>
+                </div>
+            </fieldset>
+    
+            <fieldset>
+                <legend>Filter by Tags</legend>
+                <input type="text" id="filter-tags" name="tags" placeholder="Enter tags" autocomplete="off">
+                <div id="tags-suggestions"></div>
+                <ul id="selected-tags"></ul>
+            </fieldset>
+    
+            <button type="submit">Filter</button>
+        </form>
+        <?php
+        return ob_get_clean();
+    }    
+
+
+    function fetch_tag_suggestions() {
+        $term = isset($_POST['term']) ? sanitize_text_field($_POST['term']) : '';
+        $exclude_tags = isset($_POST['selected_tags']) ? array_map('sanitize_text_field', $_POST['selected_tags']) : [];
+    
+        if (!empty($term)) {
+            $tags = get_terms([
+                'taxonomy' => 'download_tag', // Replace with your actual tag taxonomy
+                'hide_empty' => false,
+                'name__like' => $term,
+                // Since `exclude` is not available directly, we will filter after fetching
+            ]);
+    
+            if (!is_wp_error($tags) && !empty($tags)) {
+                ob_start();
+                foreach ($tags as $tag) {
+                    if (!in_array($tag->name, $exclude_tags)) { // Exclude selected tags
+                        echo '<div class="tag-suggestion">' . esc_html($tag->name) . '</div>';
+                    }
+                }
+                $suggestions_html = ob_get_clean();
+    
+                if (empty($suggestions_html)) {
+                    $suggestions_html = '<div class="no-suggestions">No tags found</div>';
+                }
+    
+                wp_send_json_success($suggestions_html);
+            } else {
+                wp_send_json_success('<p>No tags found</p>');
+            }
+        }
+        wp_die();
+    }
+    
+
+    public function filter_downloads() {
+        // Get categories and tags from the POST payload
+        $category_ids = isset($_POST['category']) ? array_map('intval', $_POST['category']) : [];
+        $tags = isset($_POST['tags']) ? array_map('sanitize_text_field', $_POST['tags']) : [];
+        
+        $args = [
+            'post_type' => 'download', 
+            'posts_per_page' => -1,
+            'tax_query' => [
+                'relation' => 'AND',
+            ],
+        ];
+    
+        // Filter by category
+        if (!empty($category_ids)) {
+            $args['tax_query'][] = [
+                'taxonomy' => 'download_category',
+                'field' => 'term_id',
+                'terms' => $category_ids,
+            ];
+        }
+    
+        // Filter by tags
+        if (!empty($tags)) {
+            $tag_ids = [];
+            foreach ($tags as $tag_name) {
+                $tag = get_term_by('name', trim($tag_name), 'download_tag');
+                if ($tag) {
+                    $tag_ids[] = $tag->term_id;
+                }
+            }
+    
+            if (!empty($tag_ids)) {
+                $args['tax_query'][] = [
+                    'taxonomy' => 'download_tag',
+                    'field' => 'term_id',
+                    'terms' => $tag_ids,
+                ];
+            }
+        }
+    
+        // Execute the query
+        $query = new WP_Query($args);
+    
+        // Log the number of downloads found
+        error_log('Number of Downloads Found: ' . $query->found_posts);
+    
+        if ($query->have_posts()) {
+            ob_start();
+            
+        // Ensure widget class exists and include necessary files
+        include_once plugin_dir_path(__FILE__) . 'widgets/custom-widget.php';
+    
+        if (!class_exists('\CustomWidget\ElementorWidgets\Widgets\Multi_Grid')) {
+            error_log('Multi_Grid class not found');
+            wp_send_json_error('Multi_Grid class not found');
+        }
+    
+        // Initialize the widget instance and set the category ID
+        $widget_instance = new \CustomWidget\ElementorWidgets\Widgets\Multi_Grid();
+
+            $widget_instance->render($query); // Pass the query to the render method
+            
+            $output = ob_get_clean();
+            wp_send_json_success($output);
+        } else {
+            wp_send_json_error(__('No downloads found', 'custom-widget-plugin'));
+        }
+    
+        wp_die();
+    }
+    
     
 
     function filter_products_callback() {
@@ -98,26 +252,8 @@ final class CustomWidgetPlugin
         wp_send_json_success($output);
     }
     
-      
-
-    function filter_category_shortcode() {
-        $terms = get_terms([
-            'taxonomy' => 'download_category',
-            'hide_empty' => true,
-        ]);
     
-        ob_start();
-        ?>
-        <div>Choose The Category</div><br>
-        <select id="filter-category">
-            <option value="">Select a category</option>
-            <?php foreach ($terms as $term) : ?>
-                <option value="<?php echo esc_attr($term->term_id); ?>"><?php echo esc_html($term->name); ?></option>
-            <?php endforeach; ?>
-        </select>
-        <?php
-        return ob_get_clean();
-    }
+    
 
     public function register_widget_styles() {
         // Correct path using plugin_dir_url or plugins_url

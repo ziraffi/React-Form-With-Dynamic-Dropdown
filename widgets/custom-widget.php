@@ -1,6 +1,5 @@
 <?php
 namespace CustomWidget\ElementorWidgets\Widgets;
-
 use Elementor\Widget_Base;
 use Elementor\Controls_Manager;
 
@@ -30,9 +29,7 @@ class Multi_Grid extends \Elementor\Widget_Base {
         return ['customWidgets'];
     }
 
-    public function get_style_depends() {
-        return ['bootstrap-css'];
-    }
+
 
     public function register_controls() {
         // Content Section
@@ -649,11 +646,10 @@ class Multi_Grid extends \Elementor\Widget_Base {
             return isset($this->category_id) ? $this->category_id : null;
         }
     
-        public function render() {
+        public function render($query = null) {
             // Ensure you have a unique identifier for the wrapper
             $widget_id = 'digital-product-grid-' . $this->get_id();            
             $settings = $this->get_settings_for_display();
-            $selected_category = $this->get_category_id();
         
             // Default settings
             $show_price = isset($settings['show_price']) && $settings['show_price'] === 'yes';
@@ -666,27 +662,53 @@ class Multi_Grid extends \Elementor\Widget_Base {
             // Button styles
             $button_styles = $this->get_button_styles($settings);
         
-            // Prepare query
-            $args = [
-                'post_type' => 'download',
-                'posts_per_page' => $number_of_products,
-            ];
-            // Apply category filter only if category is selected and not 0
-            if (!empty($selected_category) && $selected_category > 0)  {
-                $args['tax_query'] = [
-                    [
+            // Prepare the query if not provided
+            if ($query === null) {
+                $args = [
+                    'post_type' => 'download',
+                    'posts_per_page' => $number_of_products,
+                    'tax_query' => [
+                        'relation' => 'AND',
+                    ],
+                ];
+        
+                // Get selected categories and tags from settings
+                $selected_categories = isset($settings['selected_categories']) ? array_map('intval', $settings['selected_categories']) : [];
+                $selected_tags = isset($settings['selected_tags']) ? array_map('sanitize_text_field', $settings['selected_tags']) : [];
+        
+                // Apply category filters
+                if (!empty($selected_categories)) {
+                    $args['tax_query'][] = [
                         'taxonomy' => 'download_category',
                         'field' => 'term_id',
-                        'terms' => $selected_category,
-                    ]
-                ];
-            }
-            
+                        'terms' => $selected_categories,
+                    ];
+                }
         
-            $query = new \WP_Query($args);
-
+                // Apply tag filters
+                if (!empty($selected_tags)) {
+                    $tag_ids = [];
+                    foreach ($selected_tags as $tag_name) {
+                        $tag = get_term_by('name', trim($tag_name), 'download_tag');
+                        if ($tag) {
+                            $tag_ids[] = $tag->term_id;
+                        }
+                    }
+        
+                    if (!empty($tag_ids)) {
+                        $args['tax_query'][] = [
+                            'taxonomy' => 'download_tag',
+                            'field' => 'term_id',
+                            'terms' => $tag_ids,
+                        ];
+                    }
+                }
+        
+                $query = new \WP_Query($args);
+            }
+        
             // Log the actual number of downloads returned
-            error_log('No of Downloads in this Category: ' . $query->found_posts);
+            error_log('Number of Downloads Found: ' . $query->found_posts);
         
             ob_start();
             ?>
@@ -712,7 +734,7 @@ class Multi_Grid extends \Elementor\Widget_Base {
                     text-align: <?php echo esc_attr($button_alignment); ?>;
                 }
             </style>
-            <div  id="<?php echo esc_attr($widget_id); ?>"  class="digital-product-grid-wrapper" style="display: grid; grid-template-columns: repeat(<?php echo esc_attr($cards_per_row); ?>, 1fr); gap: <?php echo esc_attr($row_gap); ?>px; grid-auto-flow: <?php echo esc_attr($auto_flow); ?>;">
+            <div id="<?php echo esc_attr($widget_id); ?>" class="digital-product-grid-wrapper" style="display: grid; grid-template-columns: repeat(<?php echo esc_attr($cards_per_row); ?>, 1fr); gap: <?php echo esc_attr($row_gap); ?>px; grid-auto-flow: <?php echo esc_attr($auto_flow); ?>;">
                 <?php
                 if ($query->have_posts()) {
                     while ($query->have_posts()) {
@@ -724,6 +746,39 @@ class Multi_Grid extends \Elementor\Widget_Base {
                         $product_image = get_the_post_thumbnail_url($product_id, 'medium') ?: plugins_url('assets/images/placeholder.webp', plugin_dir_path(__FILE__));
                         $product_price = edd_get_download_price($product_id);
                         $product_link = get_permalink($product_id);
+
+                        // Get the product categories (taxonomy: 'download_category')
+                        $product_categories = get_the_terms($product_id, 'download_category');
+                        $product_category_names = [];
+                        if (!is_wp_error($product_categories) && !empty($product_categories)) {
+                            foreach ($product_categories as $category) {
+                                $product_category_names[] = $category->name;
+                            }
+                        }
+                        $product_category = implode(', ', $product_category_names);
+
+                        // Get the product tags (taxonomy: 'download_tag')
+                        $product_tags = get_the_terms($product_id, 'download_tag');
+                        $product_tag_names = [];
+                        if (!is_wp_error($product_tags) && !empty($product_tags)) {
+                            foreach ($product_tags as $tag) {
+                                $product_tag_names[] = $tag->name;
+                            }
+                        }
+                        $product_tag = implode(', ', $product_tag_names);
+
+                        // Determine the number of columns based on the presence of category and tag
+                        $columns = [];
+                        if ($product_category) {
+                            $columns[] = '1fr'; // Add a column for category if it exists
+                        }
+                        if ($product_tag) {
+                            $columns[] = '1fr'; // Add a column for tag if it exists
+                        }
+
+                        // Create the grid template string
+                        $gridTemplate = implode(' ', $columns);
+
         
                         $unique_id = 'product-widget-id-' . $product_id;
         
@@ -746,44 +801,65 @@ class Multi_Grid extends \Elementor\Widget_Base {
                         );
         
                         ?>
-                        <div <?php echo $this->get_render_attribute_string('wrapper_' . $product_id); ?> style="display: grid;">
-                            <div <?php echo $this->get_render_attribute_string('inner_' . $product_id); ?> style="display: grid;">
-                                <div class="card" style="display: grid; grid-template-rows: auto 1fr auto; grid-row: 1/4;">
-                                    <!-- Image Container -->
-                                    <div class="p-0 m-0 card-image-container" style="grid-row: auto;">
-                                        <?php if (!empty($product_image)) { ?>
-                                            <img class="card-img-top" src="<?php echo esc_url($product_image); ?>" alt="<?php echo esc_attr($product_title); ?>">
-                                        <?php } else { ?>
-                                            <img class="card-img-top" src="<?php echo esc_url(plugins_url('assets/images/placeholder.webp', plugin_dir_path(__FILE__))); ?>" alt="<?php echo esc_attr__('Placeholder Image', 'custom-widget-plugin'); ?>">
-                                        <?php } ?>
-                                    </div>
-                                        
-                                    <!-- Card Body with title and excerpt -->
-                                    <div class="card-body text-center" style="display: grid; grid-template-rows: auto 1fr;">
-                                        <div class="text-center" style="grid-row: auto;">
-                                            <h2 class="card-title"><?php echo esc_html($product_title); ?></h2>
-                                        </div>
-                                        <div style="grid-row: 1fr;">
-                                            <p class="card-text text-center"><?php echo esc_html($product_excerpt); ?></p>
-                                        </div>
-                                        <!-- Price (if enabled) -->
-                                        <?php if ($show_price) { ?>
-                                            <div style="grid-row: auto;">
-                                                <p class="card-text text-center"><strong><?php echo __('Price:', 'custom-widget-plugin') . ' ' . edd_currency_filter($product_price); ?></strong></p>
-                                            </div>
-                                        <?php } ?>
-                                    </div>
-                                        
-                                    <!-- Card Footer with button -->
-                                    <div class="card-footer digital-product-footer" style="grid-row: auto;">
-                                        <a href="<?php echo esc_url($product_link); ?>" class="btn digital-product-button">
-                                            <?php echo __('View Product', 'custom-widget-plugin'); ?>
-                                        </a>
-                                    </div>
-                                </div>
+<div <?php echo $this->get_render_attribute_string('wrapper_' . $product_id); ?> style="display: grid; grid-template-rows: 1fr; gap: 10px;">
+    <div <?php echo $this->get_render_attribute_string('inner_' . $product_id); ?> style="display: grid; grid-template-rows: 1fr; gap: 10px;">
+        <div class="card" style="display: grid; grid-template-rows: auto 1fr auto; height: 100%;">
+            <!-- Image Container -->
+            <div class="p-0 m-0 card-image-container" style="grid-row: auto;">
+                <?php if (!empty($product_image)) { ?>
+                    <img class="card-img-top" src="<?php echo esc_url($product_image); ?>" alt="<?php echo esc_attr($product_title); ?>">
+                <?php } else { ?>
+                    <img class="card-img-top" src="<?php echo esc_url(plugins_url('assets/images/placeholder.webp', plugin_dir_path(__FILE__))); ?>" alt="<?php echo esc_attr__('Placeholder Image', 'custom-widget-plugin'); ?>">
+                <?php } ?>
+            </div>
+                
+            <!-- Card Body with title and excerpt -->
+            <div class="card-body text-center" style="display: grid; grid-template-rows: auto 1fr;">
+                <div class="text-center py-1" style="grid-row: auto;">
+                    <span class="download-title"><?php echo esc_html($product_title); ?></span>
+                </div>
+                <?php if($product_excerpt): ?>
+                    <div style="grid-row: auto;">
+                        <p class="card-text text-center"><?php echo esc_html($product_excerpt); ?></p>
+                    </div>
+                <?php endif; ?>
+
+                <?php if(!empty($columns)): ?> <!-- Check if either category or tag exists -->
+                    <div class="terms-info px-3 py-2" style="display: grid; grid-template-columns: <?php echo esc_attr($gridTemplate); ?>; gap: 5px; align-items: start;">
+                        <?php if($product_category): ?>
+                            <div class="term-title">
+                                Categories: <br>
+                                <span class="term-style"><?php echo esc_html($product_category); ?></span>
                             </div>
-                        </div>
-                                        
+                        <?php endif; ?>
+                        
+                        <?php if($product_tag): ?>
+                            <div class="term-title">
+                                Tags: <br>
+                                <span class="term-style"><?php echo esc_html($product_tag); ?></span>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+                        
+                <!-- Price (if enabled) -->
+                <?php if ($show_price) { ?>
+                    <div class="price-info py-2" style="grid-row: auto;">
+                        <p class="card-text text-center"><strong><?php echo __('Price:', 'custom-widget-plugin') . ' ' . edd_currency_filter($product_price); ?></strong></p>
+                    </div>
+                <?php } ?>
+                    
+                <!-- Card Footer with button -->
+                <div class="card-footer digital-product-footer" style="grid-row: auto;">
+                    <a href="<?php echo esc_url($product_link); ?>" class="btn digital-product-button">
+                        <?php echo __('View Product', 'custom-widget-plugin'); ?>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
                         <?php
                     }
                     wp_reset_postdata();
@@ -793,9 +869,9 @@ class Multi_Grid extends \Elementor\Widget_Base {
                 ?>
             </div>
             <?php
-            $output = ob_get_clean();
-            echo $output;
+            echo ob_get_clean();
         }
+        
         
 // Utility function to get button styles
 private function get_button_styles($settings) {
