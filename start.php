@@ -15,6 +15,8 @@ use Elementor\Plugin as ElementorPlugin;
 use Elementor\Widgets_Manager as ElementorWidgetsManager;
 use WP_Query;
 
+require_once plugin_dir_path(__FILE__) . 'includes/helper-functions.php';
+
 
 if (!defined('ABSPATH')) {
     exit;
@@ -44,7 +46,6 @@ final class CustomWidgetPlugin
         // add_action('wp_ajax_filter_products', [$this, 'filter_products_callback']);
         // add_action('wp_ajax_nopriv_filter_products', [$this, 'filter_products_callback']);
 
-
         add_action('wp_ajax_filter_downloads', [$this, 'filter_downloads']);
         add_action('wp_ajax_nopriv_filter_downloads', [$this, 'filter_downloads']);
 
@@ -62,7 +63,8 @@ final class CustomWidgetPlugin
         );
     
         wp_localize_script('ajax-filter', 'ajax_object', array(
-            'ajax_url' => admin_url('admin-ajax.php')
+            'ajax_url' => admin_url('admin-ajax.php'),
+            'pageId' => get_the_ID(),
         ));
         
     }
@@ -76,7 +78,7 @@ final class CustomWidgetPlugin
     
         ob_start();
         ?>
-        <form id="download-filter-form">
+        <form id="download-filter-form" data-widget-id="">
             <fieldset>
                 <legend>Filter by Category</legend>
                 <div>
@@ -136,14 +138,60 @@ final class CustomWidgetPlugin
         wp_die();
     }
     
-
+    public function get_widget_settings($widget_id, $page_Id) {
+        if (empty($widget_id)) {
+            error_log('Widget ID is missing.');
+            return [];
+        }
+    
+        // Force Elementor to load if it hasn't been
+        \Elementor\Plugin::$instance->frontend->init();
+        
+        // Get the Elementor document for the current page
+        $document = \Elementor\Plugin::instance()->documents->get_doc_for_frontend($page_Id);
+        error_log('Value of $page_Id at get_widget_settings: ' . $page_Id);
+        if (!$document) {
+            error_log('Document not found for this page.');
+            return [];
+        }
+    
+        // Get all widgets data for this document
+        $elements_data = $document->get_elements_data();
+    
+        // Search for widget settings by widget ID
+        $settings = find_widget_settings($elements_data, $widget_id); // Or use the namespace if required
+    
+        // Log the retrieved settings for debugging
+        error_log('Settings retrieved: ' . print_r($settings, true));
+    
+        return $settings;
+    }
+    
+    
+    
+    
     public function filter_downloads() {
+        
         // Get categories and tags from the POST payload
         $category_ids = isset($_POST['category']) ? array_map('intval', $_POST['category']) : [];
         $tags = isset($_POST['tags']) ? array_map('sanitize_text_field', $_POST['tags']) : [];
+        $widget_id = isset($_POST['widget_id']) ? sanitize_text_field($_POST['widget_id']) : '';
+        $page_Id = isset($_POST['page_id']) ? sanitize_text_field($_POST['page_id']) : '';
+        error_log('Widget ID in server: ' . $widget_id);
+    
+        // Log the request payload
+        error_log('Categories: ' . print_r($category_ids, true));
+        error_log('Tags: ' . print_r($tags, true));
+    
+        // Retrieve the widget settings
+        $settings = $this->get_widget_settings($widget_id, $page_Id);
         
+        error_log('widget ID at filter_downloads: ' . $widget_id);
+
+    
+        // Prepare the query
         $args = [
-            'post_type' => 'download', 
+            'post_type' => 'download',
             'posts_per_page' => -1,
             'tax_query' => [
                 'relation' => 'AND',
@@ -180,28 +228,23 @@ final class CustomWidgetPlugin
     
         // Execute the query
         $query = new WP_Query($args);
-    
-        // Log the number of downloads found
         error_log('Number of Downloads Found: ' . $query->found_posts);
     
         if ($query->have_posts()) {
             ob_start();
-            
-        // Ensure widget class exists and include necessary files
-        include_once plugin_dir_path(__FILE__) . 'widgets/custom-widget.php';
+            include_once plugin_dir_path(__FILE__) . 'widgets/custom-widget.php';
     
-        if (!class_exists('\CustomWidget\ElementorWidgets\Widgets\Multi_Grid')) {
-            error_log('Multi_Grid class not found');
-            wp_send_json_error('Multi_Grid class not found');
-        }
+            if (!class_exists('\CustomWidget\ElementorWidgets\Widgets\Multi_Grid')) {
+                error_log('Multi_Grid class not found');
+                wp_send_json_error('Multi_Grid class not found');
+            }
     
-        // Initialize the widget instance and set the category ID
-        $widget_instance = new \CustomWidget\ElementorWidgets\Widgets\Multi_Grid();
-
-            $widget_instance->render($query); // Pass the query to the render method
-            
+            // Initialize the Multi_Grid widget instance
+            $widget_instance = new \CustomWidget\ElementorWidgets\Widgets\Multi_Grid();
+            $widget_instance->set_settings($settings); 
+            $widget_instance->render($query);
             $output = ob_get_clean();
-            wp_send_json_success($output);
+            wp_send_json_success(['output' => $output, 'widget_id' => $widget_id]);
         } else {
             wp_send_json_error(__('No downloads found', 'custom-widget-plugin'));
         }
@@ -210,51 +253,6 @@ final class CustomWidgetPlugin
     }
     
     
-
-    function filter_products_callback() {
-        if (isset($_POST['category_id'])) {
-            $category_id = intval($_POST['category_id']);
-            error_log('Selected category ID: ' . $category_id);
-        } else {
-            error_log('Category ID not set.');
-            wp_send_json_error('Category ID not set');
-        }
-    
-        // Ensure widget class exists and include necessary files
-        include_once plugin_dir_path(__FILE__) . 'widgets/custom-widget.php';
-    
-        if (!class_exists('\CustomWidget\ElementorWidgets\Widgets\Multi_Grid')) {
-            error_log('Multi_Grid class not found');
-            wp_send_json_error('Multi_Grid class not found');
-        }
-    
-        // Initialize the widget instance and set the category ID
-        $widget_instance = new \CustomWidget\ElementorWidgets\Widgets\Multi_Grid();
-
-        // If category_id is 0, retrieve all downloads
-        if ($category_id == 0) {
-            $widget_instance->set_category_id(null); // Fetch all downloads if no specific category
-        } else {
-            $widget_instance->set_category_id($category_id);
-        }    
-
-        ob_start();
-
-        $widget_instance->render(); 
-
-        $output = ob_get_clean();
-    
-        if (empty($output)) {
-            error_log('No output generated by widget render');
-            wp_send_json_error('No output generated');
-        }
-    
-        wp_send_json_success($output);
-    }
-    
-    
-    
-
     public function register_widget_styles() {
         // Correct path using plugin_dir_url or plugins_url
         wp_enqueue_style( 'bootstrap-css', plugin_dir_url( __FILE__ ) . 'assets/css/bootstrap.css' ); 
