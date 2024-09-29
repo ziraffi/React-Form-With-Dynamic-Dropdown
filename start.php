@@ -16,6 +16,7 @@ use Elementor\Widgets_Manager as ElementorWidgetsManager;
 use WP_Query;
 
 require_once plugin_dir_path(__FILE__) . 'includes/helper-functions.php';
+require_once plugin_dir_path(__FILE__) . 'includes/query-functions.php';
 
 
 if (!defined('ABSPATH')) {
@@ -138,8 +139,8 @@ final class CustomWidgetPlugin
         wp_die();
     }
     
-    public function get_widget_settings($widget_id, $page_Id) {
-        if (empty($widget_id)) {
+    public function get_widget_settings($widget_data_id, $page_Id) {
+        if (empty($widget_data_id)) {
             error_log('Widget ID is missing.');
             return [];
         }
@@ -159,76 +160,60 @@ final class CustomWidgetPlugin
         $elements_data = $document->get_elements_data();
     
         // Search for widget settings by widget ID
-        $settings = find_widget_settings($elements_data, $widget_id); // Or use the namespace if required
-    
-        // Log the retrieved settings for debugging
-        error_log('Settings retrieved: ' . print_r($settings, true));
-    
+        $settings = find_widget_settings($elements_data, $widget_data_id); 
+
         return $settings;
     }
     
-    
-    
-    
     public function filter_downloads() {
-        
-        // Get categories and tags from the POST payload
-        $category_ids = isset($_POST['category']) ? array_map('intval', $_POST['category']) : [];
-        $tags = isset($_POST['tags']) ? array_map('sanitize_text_field', $_POST['tags']) : [];
-        $widget_id = isset($_POST['widget_id']) ? sanitize_text_field($_POST['widget_id']) : '';
-        $page_Id = isset($_POST['page_id']) ? sanitize_text_field($_POST['page_id']) : '';
-        error_log('Widget ID in server: ' . $widget_id);
+        // Reset category and tags for a fresh state on each filter operation
+        $category_ids = [];
+        $tags = [];
     
-        // Log the request payload
-        error_log('Categories: ' . print_r($category_ids, true));
-        error_log('Tags: ' . print_r($tags, true));
+        // Get the number of products from the POST payload
+        $number_of_products = isset($_POST['number_of_products']) ? intval($_POST['number_of_products']) : -1; 
+        error_log("Number of Products from POST: " . $number_of_products); // Log number of products
     
-        // Retrieve the widget settings
-        $settings = $this->get_widget_settings($widget_id, $page_Id);
-        
-        error_log('widget ID at filter_downloads: ' . $widget_id);
-
+        // Fetch the incoming category IDs and tags
+        if (isset($_POST['category'])) {
+            $category_ids = array_map('intval', $_POST['category']);
+            error_log("Selected Categories: " . implode(',', $category_ids));
+        }
     
-        // Prepare the query
-        $args = [
-            'post_type' => 'download',
-            'posts_per_page' => -1,
-            'tax_query' => [
-                'relation' => 'AND',
-            ],
-        ];
+        if (isset($_POST['tags'])) {
+            $tags = array_map('sanitize_text_field', $_POST['tags']);
+            error_log("Selected Tags: " . implode(',', $tags));
+        }
     
-        // Filter by category
+        // Get the widget data ID and page ID
+        $widget_data_id = isset($_POST['widget_data_id']) ? sanitize_text_field($_POST['widget_data_id']) : '';
+        $page_id = isset($_POST['page_id']) ? sanitize_text_field($_POST['page_id']) : '';
+    
+        // Retrieve widget settings
+        $settings = $this->get_widget_settings($widget_data_id, $page_id);
+    
+        // Ensure settings exist before proceeding
+        if (!$settings) {
+            wp_send_json_error(__('Widget settings not found', 'custom-widget-plugin'));
+            wp_die();
+        }
+    
+        // Update settings with selected categories and tags
         if (!empty($category_ids)) {
-            $args['tax_query'][] = [
-                'taxonomy' => 'download_category',
-                'field' => 'term_id',
-                'terms' => $category_ids,
-            ];
+            $settings['selected_categories'] = $category_ids;
+        } else {
+            unset($settings['selected_categories']); // Clear if no categories are selected
         }
     
-        // Filter by tags
         if (!empty($tags)) {
-            $tag_ids = [];
-            foreach ($tags as $tag_name) {
-                $tag = get_term_by('name', trim($tag_name), 'download_tag');
-                if ($tag) {
-                    $tag_ids[] = $tag->term_id;
-                }
-            }
-    
-            if (!empty($tag_ids)) {
-                $args['tax_query'][] = [
-                    'taxonomy' => 'download_tag',
-                    'field' => 'term_id',
-                    'terms' => $tag_ids,
-                ];
-            }
+            $settings['selected_tags'] = $tags;
+        } else {
+            unset($settings['selected_tags']); // Clear if no tags are selected
         }
     
-        // Execute the query
-        $query = new WP_Query($args);
-        error_log('Number of Downloads Found: ' . $query->found_posts);
+        // Create the download query
+        $query = create_download_query($settings);
+        error_log('Number of Downloads Found: ' . $query->found_posts); // Log number of downloads found
     
         if ($query->have_posts()) {
             ob_start();
@@ -242,9 +227,9 @@ final class CustomWidgetPlugin
             // Initialize the Multi_Grid widget instance
             $widget_instance = new \CustomWidget\ElementorWidgets\Widgets\Multi_Grid();
             $widget_instance->set_settings($settings); 
-            $widget_instance->render($query);
+            $widget_instance->render($query, $widget_data_id, $category_ids, $tags);
             $output = ob_get_clean();
-            wp_send_json_success(['output' => $output, 'widget_id' => $widget_id]);
+            wp_send_json_success(['output' => $output, 'widget_data_id' => $widget_data_id]);
         } else {
             wp_send_json_error(__('No downloads found', 'custom-widget-plugin'));
         }
@@ -253,6 +238,7 @@ final class CustomWidgetPlugin
     }
     
     
+
     public function register_widget_styles() {
         // Correct path using plugin_dir_url or plugins_url
         wp_enqueue_style( 'bootstrap-css', plugin_dir_url( __FILE__ ) . 'assets/css/bootstrap.css' ); 

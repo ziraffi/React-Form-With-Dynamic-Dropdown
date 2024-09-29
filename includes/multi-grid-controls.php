@@ -77,7 +77,7 @@ $widget->add_responsive_control(
             'min' => 1,
             'max' => 20,
             'step' => 1,
-            'default' => 6,
+            'default' => 20,
             'description' => esc_html__('Enter the number of products to display', 'custom-widget-plugin'),
         ]
     );

@@ -6,15 +6,18 @@ jQuery(document).ready(function ($) {
     $('#download-filter-form').on('submit', function (e) {
         e.preventDefault();
         console.log("AJAX filter form submitted");
-    
+
         categories = $('input[name="category[]"]:checked').map(function() {
             return $(this).val();
         }).get();
-    
+        
+        var elementorWidgetDiv = $('.elementor-widget-digital-product-grid>.elementor-widget-container');
         var client2ServeId = $('.elementor-widget-digital-product-grid');
-        var widgetId = client2ServeId.data('id'); // Make sure this is not empty
+        var widgetDataId = client2ServeId.data('id'); // Make sure this is not empty
         var pageId = ajax_object.pageId;
-    
+        var numberOfDownloads = $('input[name="number_of_products"]').val(); // Assuming this is part of the form
+        
+        // Send categories, tags, and number of downloads to the server
         $.ajax({
             url: ajax_object.ajax_url,
             type: 'POST',
@@ -22,41 +25,38 @@ jQuery(document).ready(function ($) {
                 action: 'filter_downloads',
                 category: categories,
                 tags: selectedTags,
-                widget_id: widgetId,
-                page_id: pageId
+                widget_data_id: widgetDataId,
+                page_id: pageId,
+                number_of_products: numberOfDownloads // Send the number of downloads as well
             },
             beforeSend: function() {
                 // Clear the widget content and add a loading spinner
-                client2ServeId.empty().append('<div class="loading-spinner"></div>');
-                console.log('Before AJAX call, Widget ID:', widgetId);
+                elementorWidgetDiv.empty().append('<div class="loading-spinner"></div>');
+                console.log('Before AJAX call, Widget ID:', widgetDataId);
             },
             success: function (response) {
                 if (response.success) {
                     console.log('AJAX response success, rendering content.');
                     
                     // Clear the spinner and insert the new HTML content
-                    client2ServeId.empty();  // First, empty the widget container
-                    client2ServeId.html(response.data.output);  // Inject the HTML response
-                    // Reset the form fields
-                    $('#download-filter-form')[0].reset();                  } else {
-                    client2ServeId.html('<p>No downloads found.</p>');
+                    elementorWidgetDiv.empty();
+                    elementorWidgetDiv.html(response.data.output);  // Inject the HTML response
+                } else {
+                    elementorWidgetDiv.html('<p>No downloads found.</p>');
                 }
             },
             error: function(xhr, status, error) {
                 console.error('AJAX Error:', status, error);
-                client2ServeId.html('<p>There was an error fetching the downloads. Please try again later.</p>');
+                elementorWidgetDiv.html('<p>There was an error fetching the downloads. Please try again later.</p>');
             },
             complete: function() {
-                // Remove the spinner
-                $('.loading-spinner').remove();
+                // Reset the form and clear suggestions after submission
+                resetFilterForm();
+                $('.loading-spinner').remove(); // Remove the spinner
             }
         });
     });
     
-    
-
-
-
     // Tag suggestion (dynamic tag fetching)
     $('#filter-tags').on('input', function () {
         var searchTerm = $(this).val();
