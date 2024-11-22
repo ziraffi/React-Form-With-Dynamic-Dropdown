@@ -1,0 +1,31 @@
+/* Basic styles for containers */
+.container {
+    position: relative;
+    border: 1px solid #ccc;
+}
+
+/* Line styles */
+.line {
+    position: absolute;
+    stroke: #000; /* Black color for lines */
+    stroke-width: 2; /* Line thickness */
+}
+
+/* Hover effect for containers */
+.container:hover {
+    border-color: #0073aa; /* Highlight color */
+}
+
+/* For drawing SVG or Canvas elements */
+svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+
+
+
+/* *************************** */

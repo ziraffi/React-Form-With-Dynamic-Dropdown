@@ -1,0 +1,71 @@
+/* General body transition for smooth background and text color changes */
+body {
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+/* Toggle button styling */
+.toggle-dark-mode-button {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    width: 50px; /* Width of the toggle switch */
+    height: 24px; /* Height of the toggle switch */
+    background-color: #88ffe3; /* Background color for the switch */
+    border-radius: 50px; /* Rounded edges */
+    position: relative; /* For positioning the round dot */
+    transition: background-color 0.3s ease;
+}
+
+/* Toggle active state */
+.toggle-dark-mode-button.active {
+    background-color: #333333; /* Background color for active state */
+}
+
+/* Round dot inside the toggle button */
+.toggle-dark-mode-button .round {
+    position: absolute;
+    top: 2px; /* Positioning the round dot */
+    left: 2px; /* Initial position */
+    width: 20px; /* Width of the round dot */
+    height: 20px; /* Height of the round dot */
+    background-color: white; /* Color of the round dot */
+    border-radius: 50%; /* Rounded shape */
+    transition: left 0.1s ease; /* Animation for sliding */
+}
+
+/* Active state of the toggle button */
+.toggle-dark-mode-button.active .round {
+    left: 28px; /* Position when active */
+}
+
+/* Ensure the toggle transition is smooth */
+.toggle-dark-mode-button,
+body.dark-mode .toggle-dark-mode-button {
+    transition: background-color 0.1s ease;
+}
+
+
+#darkModeImg {display: none;}
+#darkToggle {cursor: pointer;}
+.dark-mode {color: #ffffff;background: #333333;}
+body.dark-mode .headerbg {background-color: #5D9CC7;}
+/* .wickylogo {fill:#333333;} */
+/* body.dark-mode .wickylogo {fill:#ffffff;} */
+body.dark-mode h1,h2,h3,h4{color:#ffffff;}
+body.dark-mode .elementor-button{background-color:#F9C059;}
+body.dark-mode .elementor-button:hover{background-color:#F9C059;}
+/* body.dark-mode .elementor-field{background-color:#fff;} */
+/* body.dark-mode .bottomfooter {background-color: #5D9CC7!important;} */
+/* body.dark-mode .footerright div{background-color: #333333!important;} */
+body.dark-mode i{color:#ffffff;}
+body.dark-mode .elementor-widget-n-menu {
+    --n-menu-title-color-normal: #ffffff !important;
+    --n-menu-title-color-active: #58d0f5;
+    --n-menu-icon-color: var(--n-menu-title-color-normal);
+    --n-menu-icon-color-active: var(--n-menu-title-color-active);
+    --n-menu-icon-color-hover: var(--n-menu-title-color-hover);
+    --n-menu-title-normal-color-dropdown: var(--n-menu-title-color-normal);
+    --n-menu-title-active-color-dropdown: var(--n-menu-title-color-active);
+    --n-menu-title-hover-color-fallback: #ffffff;
+    --n-menu-title-color-hover: #F9C059;
+}
